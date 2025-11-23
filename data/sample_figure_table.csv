@@ -1,0 +1,7 @@
+Model,Accuracy,Parameters,Training_Time,Memory_Usage,Dataset
+BERT-Base,85.2,110M,12h,4GB,GLUE
+GPT-3,92.1,175B,720h,350GB,WebText
+T5-Large,89.5,770M,48h,16GB,C4
+RoBERTa,87.8,125M,24h,8GB,BookCorpus
+ELECTRA,88.9,110M,15h,5GB,OpenWebText
+DeBERTa,91.3,1.5B,96h,32GB,CC-News
