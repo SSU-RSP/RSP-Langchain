@@ -1,117 +1,307 @@
-# processor.py
-
 import asyncio
-from schemas import AnalysisRequest, AnalysisResponse, SectionAnalysisResult
-from agents import process_text, process_vision, process_math, process_table
 from typing import List
+# schemas에서 새로 정의한 모델들을 가져옵니다.
+from schemas import (
+    TextAnalysisRequest, TextAnalysisResponse,
+    VisionAnalysisRequest, VisionAnalysisResponse,
+    TableAnalysisRequest, TableAnalysisResponse,
+    MathAnalysisRequest, MathAnalysisResponse,
+    AnalysisResultItem
+)
+# agents에서 각 처리 함수를 가져옵니다.
+from agents import process_text, process_vision, process_math, process_table
 
-async def analyze_section(request: AnalysisRequest) -> AnalysisResponse:
-    """
-    API 요청을 받아 각 데이터 유형에 맞는 에이전트를 '동시에' 호출하고 결과를 종합합니다.
-    """
-    tasks = []
+# 1. 텍스트 분석 프로세서
+async def analyze_text_only(request: TextAnalysisRequest) -> TextAnalysisResponse:
+    print(f"📄 텍스트 분석 요청: {request.paper_title}")
+    result_text = await asyncio.to_thread(
+        process_text,
+        content=request.text,
+        paper_title=request.paper_title
+    )
+    return TextAnalysisResponse(result=result_text)
 
-    # 1. 각 데이터 유형에 맞는 에이전트 호출을 '작업'으로 추가합니다.
-    if request.text:
-        tasks.append(
-            asyncio.to_thread(
-                process_text,
-                content=request.text,
-                paper_title=request.paper_title,
-                section_title=request.section_title,
-                table_of_contents=request.table_of_contents
-            )
-        )
-    else:
-        tasks.append(asyncio.sleep(0, result=None))
-
-    if request.images:
-        tasks.append(
-            asyncio.to_thread(
-                process_vision,
-                content=request.text or "",
-                paper_title=request.paper_title,
-                section_title=request.section_title,
-                table_of_contents=request.table_of_contents,
-                images=request.images
-            )
-        )
-    else:
-        tasks.append(asyncio.sleep(0, result=None))
-
-    if request.tables:
-        tasks.append(
-            asyncio.to_thread(
-                process_table,
-                content=request.text or "",
-                paper_title=request.paper_title,
-                section_title=request.section_title,
-                table_of_contents=request.table_of_contents,
-                tables=request.tables
-            )
-        )
-    else:
-        tasks.append(asyncio.sleep(0, result=None))
-        
-    if request.equations:
-        tasks.append(
-            asyncio.to_thread(
-                process_math,
-                content=request.text or "",
-                paper_title=request.paper_title,
-                section_title=request.section_title,
-                table_of_contents=request.table_of_contents,
-                equations=request.equations
-            )
-        )
-    else:
-        tasks.append(asyncio.sleep(0, result=None))
-
-    # 2. 모든 작업을 동시에 실행하고 결과를 기다립니다.
-    print(f"총 {len(tasks)}개의 분석 작업을 동시에 시작합니다...")
-    results = await asyncio.gather(*tasks)
-    print("모든 분석 작업 완료.")
-
-    # 3. 각 작업의 결과를 응답 객체에 담아 반환합니다.
-    # [수정] 이제 results의 각 요소는 단일 문자열이므로 그대로 할당합니다.
-    response = AnalysisResponse(
-        text_result=results[0],
-        image_results=results[1],
-        table_results=results[2],
-        equation_results=results[3]
+# 2. 비전(그림) 분석 프로세서
+async def analyze_vision_only(request: VisionAnalysisRequest) -> VisionAnalysisResponse:
+    print(f"🖼️ 비전 분석 요청: {len(request.images)}장")
+    if not request.images:
+        return VisionAnalysisResponse(results=[])
+    
+    # agents.process_vision은 List[Dict]를 반환하므로 이를 스키마에 맞게 변환
+    raw_results = await asyncio.to_thread(
+        process_vision,
+        content=request.text,
+        paper_title=request.paper_title,
+        images=request.images
     )
     
-    return response
+    # Dict -> Pydantic Model 변환
+    formatted_results = [AnalysisResultItem(**item) for item in raw_results]
+    return VisionAnalysisResponse(results=formatted_results)
 
-async def analyze_sections_in_batch(requests: List[AnalysisRequest]) -> List[SectionAnalysisResult]:
-    """
-    여러 섹션 요청을 리스트로 받아, 병렬로 처리하고 결과 리스트를 반환합니다.
-    """
-    if not requests:
-        return []
+# 3. 표 분석 프로세서
+async def analyze_table_only(request: TableAnalysisRequest) -> TableAnalysisResponse:
+    print(f"📊 표 분석 요청: {len(request.tables)}개")
+    if not request.tables:
+        return TableAnalysisResponse(results=[])
 
-    # 각 섹션에 대한 분석 작업을 비동기 태스크 리스트로 만듭니다.
-    batch_tasks = [analyze_section(req) for req in requests]
+    raw_results = await asyncio.to_thread(
+        process_table,
+        content=request.text,
+        paper_title=request.paper_title,
+        tables=request.tables
+    )
     
-    # asyncio.gather를 사용해 모든 섹션 분석을 동시에 실행합니다.
-    print(f"총 {len(requests)}개 섹션의 동시 분석을 시작합니다...")
-    batch_results = await asyncio.gather(*batch_tasks)
-    print("모든 섹션 분석 완료.")
+    formatted_results = [AnalysisResultItem(**item) for item in raw_results]
+    return TableAnalysisResponse(results=formatted_results)
 
-    # 최종 응답 형식에 맞게 결과를 정리합니다.
-    final_response = []
-    for request, result in zip(requests, batch_results):
-        final_response.append(
-            SectionAnalysisResult(
-                section_id=request.section_id,
-                text_result=result.text_result,
-                image_results=result.image_results,
-                table_results=result.table_results,
-                equation_results=result.equation_results
-            )
-        )
+# 4. 수식 분석 프로세서
+async def analyze_math_only(request: MathAnalysisRequest) -> MathAnalysisResponse:
+    print(f"➗ 수식 분석 요청: {len(request.equations)}개")
+    if not request.equations:
+        return MathAnalysisResponse(results=[])
+
+    raw_results = await asyncio.to_thread(
+        process_math,
+        content=request.text,
+        paper_title=request.paper_title,
+        equations=request.equations
+    )
+    
+    formatted_results = [AnalysisResultItem(**item) for item in raw_results]
+    return MathAnalysisResponse(results=formatted_results)
+
+# import asyncio
+# from schemas import AnalysisRequest, AnalysisResponse, SectionAnalysisResult
+# # [주의] process_text 등은 이제 processor.py와 같은 폴더의 agents.py에 있다고 가정합니다.
+# from agents import process_text, process_vision, process_math, process_table
+# from typing import List
+
+# async def analyze_section(request: AnalysisRequest) -> AnalysisResponse:
+#     """
+#     API 요청을 받아 각 데이터 유형에 맞는 에이전트를 '동시에' 호출하고 결과를 종합합니다.
+#     """
+#     tasks = []
+
+#     # 1. 텍스트 분석 (전체 요약)
+#     # process_text(content: str, paper_title: str) -> str
+#     if request.text:
+#         tasks.append(
+#             asyncio.to_thread(
+#                 process_text,
+#                 content=request.text,
+#                 paper_title=request.paper_title
+#                 # section_title, table_of_contents 인자 제거됨
+#             )
+#         )
+#     else:
+#         tasks.append(asyncio.sleep(0, result=None))
+
+#     # 2. 이미지(Vision) 분석
+#     # process_vision(content, paper_title, images) -> List[Dict]
+#     if request.images:
+#         tasks.append(
+#             asyncio.to_thread(
+#                 process_vision,
+#                 content=request.text or "",
+#                 paper_title=request.paper_title,
+#                 images=request.images
+#                 # section_title, table_of_contents 인자 제거됨
+#             )
+#         )
+#     else:
+#         # 빈 리스트 반환하도록 설정 (스키마에 맞춤)
+#         tasks.append(asyncio.sleep(0, result=[]))
+
+#     # 3. 표(Table) 분석
+#     # process_table(content, paper_title, tables) -> List[Dict]
+#     if request.tables:
+#         tasks.append(
+#             asyncio.to_thread(
+#                 process_table,
+#                 content=request.text or "",
+#                 paper_title=request.paper_title,
+#                 tables=request.tables
+#             )
+#         )
+#     else:
+#         tasks.append(asyncio.sleep(0, result=[]))
         
-    return final_response
+#     # 4. 수식(Math) 분석
+#     # process_math(content, paper_title, equations) -> List[Dict]
+#     if request.equations:
+#         tasks.append(
+#             asyncio.to_thread(
+#                 process_math,
+#                 content=request.text or "",
+#                 paper_title=request.paper_title,
+#                 equations=request.equations
+#             )
+#         )
+#     else:
+#         tasks.append(asyncio.sleep(0, result=[]))
+
+#     # --- 실행 및 결과 수집 ---
+#     print(f"총 {len(tasks)}개의 분석 작업을 동시에 시작합니다...")
+#     results = await asyncio.gather(*tasks)
+#     print("모든 분석 작업 완료.")
+
+#     # results[0]: str (텍스트 요약)
+#     # results[1]: List[Dict] (이미지)
+#     # results[2]: List[Dict] (표)
+#     # results[3]: List[Dict] (수식)
+
+#     response = AnalysisResponse(
+#         text_result=results[0],
+#         image_results=results[1] if results[1] else [],
+#         table_results=results[2] if results[2] else [],
+#         equation_results=results[3] if results[3] else []
+#     )
+    
+#     return response
+
+# async def analyze_sections_in_batch(requests: List[AnalysisRequest]) -> List[SectionAnalysisResult]:
+#     """
+#     여러 섹션 요청을 리스트로 받아, 병렬로 처리하고 결과 리스트를 반환합니다.
+#     """
+#     if not requests:
+#         return []
+
+#     # 각 요청에 대해 analyze_section 호출
+#     batch_tasks = [analyze_section(req) for req in requests]
+    
+#     print(f"총 {len(requests)}개 요청의 동시 분석을 시작합니다...")
+#     batch_results = await asyncio.gather(*batch_tasks)
+#     print("모든 배치 분석 완료.")
+
+#     final_response = []
+#     for request, result in zip(requests, batch_results):
+#         final_response.append(
+#             SectionAnalysisResult(
+#                 section_id=request.section_id,
+#                 text_result=result.text_result,
+#                 image_results=result.image_results,
+#                 table_results=result.table_results,
+#                 equation_results=result.equation_results
+#             )
+#         )
+        
+#     return final_response
+
+# processor.py
+
+# import asyncio
+# from schemas import AnalysisRequest, AnalysisResponse, SectionAnalysisResult
+# from agents import process_text, process_vision, process_math, process_table
+# from typing import List
+
+# async def analyze_section(request: AnalysisRequest) -> AnalysisResponse:
+#     """
+#     API 요청을 받아 각 데이터 유형에 맞는 에이전트를 '동시에' 호출하고 결과를 종합합니다.
+#     """
+#     tasks = []
+
+#     # 1. 각 데이터 유형에 맞는 에이전트 호출을 '작업'으로 추가합니다.
+#     if request.text:
+#         tasks.append(
+#             asyncio.to_thread(
+#                 process_text,
+#                 content=request.text,
+#                 paper_title=request.paper_title,
+#                 section_title=request.section_title,
+#                 table_of_contents=request.table_of_contents
+#             )
+#         )
+#     else:
+#         tasks.append(asyncio.sleep(0, result=None))
+
+#     if request.images:
+#         tasks.append(
+#             asyncio.to_thread(
+#                 process_vision,
+#                 content=request.text or "",
+#                 paper_title=request.paper_title,
+#                 section_title=request.section_title,
+#                 table_of_contents=request.table_of_contents,
+#                 images=request.images
+#             )
+#         )
+#     else:
+#         tasks.append(asyncio.sleep(0, result=None))
+
+#     if request.tables:
+#         tasks.append(
+#             asyncio.to_thread(
+#                 process_table,
+#                 content=request.text or "",
+#                 paper_title=request.paper_title,
+#                 section_title=request.section_title,
+#                 table_of_contents=request.table_of_contents,
+#                 tables=request.tables
+#             )
+#         )
+#     else:
+#         tasks.append(asyncio.sleep(0, result=None))
+        
+#     if request.equations:
+#         tasks.append(
+#             asyncio.to_thread(
+#                 process_math,
+#                 content=request.text or "",
+#                 paper_title=request.paper_title,
+#                 section_title=request.section_title,
+#                 table_of_contents=request.table_of_contents,
+#                 equations=request.equations
+#             )
+#         )
+#     else:
+#         tasks.append(asyncio.sleep(0, result=None))
+
+#     # 2. 모든 작업을 동시에 실행하고 결과를 기다립니다.
+#     print(f"총 {len(tasks)}개의 분석 작업을 동시에 시작합니다...")
+#     results = await asyncio.gather(*tasks)
+#     print("모든 분석 작업 완료.")
+
+#     # 3. 각 작업의 결과를 응답 객체에 담아 반환합니다.
+#     # [수정] 이제 results의 각 요소는 단일 문자열이므로 그대로 할당합니다.
+#     response = AnalysisResponse(
+#         text_result=results[0],
+#         image_results=results[1],
+#         table_results=results[2],
+#         equation_results=results[3]
+#     )
+    
+#     return response
+
+# async def analyze_sections_in_batch(requests: List[AnalysisRequest]) -> List[SectionAnalysisResult]:
+#     """
+#     여러 섹션 요청을 리스트로 받아, 병렬로 처리하고 결과 리스트를 반환합니다.
+#     """
+#     if not requests:
+#         return []
+
+#     # 각 섹션에 대한 분석 작업을 비동기 태스크 리스트로 만듭니다.
+#     batch_tasks = [analyze_section(req) for req in requests]
+    
+#     # asyncio.gather를 사용해 모든 섹션 분석을 동시에 실행합니다.
+#     print(f"총 {len(requests)}개 섹션의 동시 분석을 시작합니다...")
+#     batch_results = await asyncio.gather(*batch_tasks)
+#     print("모든 섹션 분석 완료.")
+
+#     # 최종 응답 형식에 맞게 결과를 정리합니다.
+#     final_response = []
+#     for request, result in zip(requests, batch_results):
+#         final_response.append(
+#             SectionAnalysisResult(
+#                 section_id=request.section_id,
+#                 text_result=result.text_result,
+#                 image_results=result.image_results,
+#                 table_results=result.table_results,
+#                 equation_results=result.equation_results
+#             )
+#         )
+        
+#     return final_response
 
 # import pandas as pd
 # import io
