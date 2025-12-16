@@ -1,69 +1,143 @@
-import pandas as pd
-import io
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_experimental.agents.agent_toolkits import create_pandas_dataframe_agent
-from config import GOOGLE_API_KEY, GEMINI_PRO_MODEL
-from typing import List
+from langchain_core.messages import HumanMessage
+from config import GOOGLE_API_KEY, GEMINI_PRO_VISION_MODEL
+from typing import List, Dict
 
-def process_table(content: str, paper_title: str, section_title: str, table_of_contents: str, tables: List[str]) -> str:
+def process_table(content: str, paper_title: str, tables: List[str]) -> List[Dict[str, str]]:
     """
-    논문의 전체 맥락 속에서 여러 CSV 표 데이터(URL)를 분석하고 서식 없는 순수 텍스트로 설명하는 에이전트
+    논문의 전체 요약(content)을 배경지식으로 하여, 
+    이미지(URL)로 된 표(Table)를 시각적으로 분석하고 설명하는 에이전트
     """
-    print(f"🚀 표 분석 에이전트 호출됨 (순수 텍스트 요약)...")
+    print(f"🚀 표 이미지 분석 에이전트 호출됨 (총 {len(tables)}개 표 분석 시작)...")
     
-    if not tables:
-        return "분석할 표 데이터가 없습니다."
-
-    all_results = []
-
+    results = []
+    
+    # Vision 모델 초기화
     try:
-        for i, csv_url in enumerate(tables):
-            print(f"  -> {i+1}번째 표 분석 시작 (URL: {csv_url})...")
-            
-            try:
-                df = pd.read_csv(csv_url)
-            except Exception as e:
-                all_results.append(f"[{i+1}번째 표 분석 실패]: URL에서 CSV 데이터를 읽는 중 오류 발생 - {e}")
-                continue
+        llm = ChatGoogleGenerativeAI(model=GEMINI_PRO_VISION_MODEL, google_api_key=GOOGLE_API_KEY)
+    except Exception as e:
+        print(f"모델 초기화 실패: {e}")
+        return []
 
-            # [수정] 지시사항을 변경하고 '출력 형식' 섹션을 제거합니다.
-            analysis_question = f"""
-            **역할**: 당신은 논문에 포함된 복잡한 데이터 표(Table)를 구조적으로 분석하고, 그 의미를 명확하게 설명해주는 전문 데이터 분석가입니다.
+    # 각 표 이미지 URL에 대해 순차적으로 분석 수행
+    for image_url in tables:
+        try:
+            # 프롬프트: 논문 전체 맥락에서 표 데이터 해석 요청
+            text_prompt = f"""
+            **역할**: 당신은 논문의 실험 결과나 통계 자료가 담긴 표(Table)를 분석하여, 그 데이터가 의미하는 핵심 인사이트를 도출하는 전문 데이터 분석가입니다.
 
-            **논문 전체 구조 (목차)**:
-            {table_of_contents}
-
-            **분석 대상**:
+            **분석 배경**:
             - 논문 제목: "{paper_title}"
-            - 현재 섹션: "{section_title}"
+            - 논문 핵심 요약:
+            {content}
 
             **지시**:
-            위 '논문 전체 구조'와 아래 '섹션 본문'을 종합적으로 참고하여, 주어진 표(DataFrame)를 심층적으로 분석해주세요.
-            별도의 제목이나 글머리 기호 같은 특정 서식은 사용하지 말고, 자연스러운 문단으로 나누어 설명글 형식으로 작성해야 합니다.
-            표의 종류, 구조 설명, 논문 내 역할 및 해석, 그리고 독자가 얻어야 할 핵심 인사이트를 모두 포함하여 설명해주세요.
-            서론이나 부연 설명 없이, 요청한 분석 내용으로 바로 시작하세요. 대답은 모두 한국어로 해주세요.
+            제공된 **표 이미지**를 보고, 위 '논문 핵심 요약'의 맥락에서 이 데이터가 어떤 의미를 갖는지 설명해주세요.
+            
+            다음 내용을 포함하여 해석해야 합니다:
+            1. **표의 목적**: 이 표는 무엇을 비교하거나 보여주기 위한 것인가? (행/열의 의미 파악)
+            2. **핵심 데이터**: 가장 눈에 띄는 수치나 추세(Trend)는 무엇인가? (최고 성능, 급격한 변화 등)
+            3. **논문 내 함의**: 이 결과가 저자의 주장이나 연구 결과를 어떻게 뒷받침하는가?
 
-            **섹션 본문**:
-            {content}
+            **작성 가이드**:
+            - 수치를 단순 나열하지 말고, '의미' 위주로 설명하세요.
+            - 서식 없는 자연스러운 줄글(문단)로 작성하세요.
+            - 서두(예: "이 표는...")를 짧게 하고 바로 핵심 분석으로 들어가세요.
+            - 언어는 **한국어**입니다.
             """
 
-            llm = ChatGoogleGenerativeAI(model=GEMINI_PRO_MODEL, google_api_key=GOOGLE_API_KEY, temperature=0)
-            agent = create_pandas_dataframe_agent(
-                llm,
-                df,
-                verbose=True,
-                agent_executor_kwargs={"handle_parsing_errors": True}
-            )
-            result = agent.invoke(analysis_question)
+            message_content = [
+                {"type": "text", "text": text_prompt},
+                {"type": "image_url", "image_url": image_url}
+            ]
             
-            # verbose=True 로그와 실제 결과물을 분리하기 위해 output만 사용합니다.
-            output = result.get("output", "분석 결과를 가져올 수 없습니다.").strip()
-            all_results.append(f"### {i+1}번째 표 분석 결과\n\n" + output)
+            message = HumanMessage(content=message_content)
+            
+            # API 호출
+            response = llm.invoke([message])
+            description = response.content.strip() if hasattr(response, 'content') else "표 분석 결과를 가져올 수 없습니다."
+            
+            # 결과 리스트에 추가 (URL과 설명 매핑)
+            results.append({
+                "image_url": image_url,
+                "description": description
+            })
+            
+        except Exception as e:
+            print(f"표 이미지({image_url}) 분석 중 오류 발생: {e}")
+            results.append({
+                "image_url": image_url,
+                "description": "표 이미지 분석 중 오류가 발생했습니다."
+            })
 
-        return "\n\n---\n\n".join(all_results)
+    return results
 
-    except Exception as e:
-        return f"표 분석 중 전체 프로세스에서 오류 발생: {e}"
+# import pandas as pd
+# import io
+# from langchain_google_genai import ChatGoogleGenerativeAI
+# from langchain_experimental.agents.agent_toolkits import create_pandas_dataframe_agent
+# from config import GOOGLE_API_KEY, GEMINI_PRO_MODEL
+# from typing import List
+
+# def process_table(content: str, paper_title: str, section_title: str, table_of_contents: str, tables: List[str]) -> str:
+#     """
+#     논문의 전체 맥락 속에서 여러 CSV 표 데이터(URL)를 분석하고 서식 없는 순수 텍스트로 설명하는 에이전트
+#     """
+#     print(f"🚀 표 분석 에이전트 호출됨 (순수 텍스트 요약)...")
+    
+#     if not tables:
+#         return "분석할 표 데이터가 없습니다."
+
+#     all_results = []
+
+#     try:
+#         for i, csv_url in enumerate(tables):
+#             print(f"  -> {i+1}번째 표 분석 시작 (URL: {csv_url})...")
+            
+#             try:
+#                 df = pd.read_csv(csv_url)
+#             except Exception as e:
+#                 all_results.append(f"[{i+1}번째 표 분석 실패]: URL에서 CSV 데이터를 읽는 중 오류 발생 - {e}")
+#                 continue
+
+#             # [수정] 지시사항을 변경하고 '출력 형식' 섹션을 제거합니다.
+#             analysis_question = f"""
+#             **역할**: 당신은 논문에 포함된 복잡한 데이터 표(Table)를 구조적으로 분석하고, 그 의미를 명확하게 설명해주는 전문 데이터 분석가입니다.
+
+#             **논문 전체 구조 (목차)**:
+#             {table_of_contents}
+
+#             **분석 대상**:
+#             - 논문 제목: "{paper_title}"
+#             - 현재 섹션: "{section_title}"
+
+#             **지시**:
+#             위 '논문 전체 구조'와 아래 '섹션 본문'을 종합적으로 참고하여, 주어진 표(DataFrame)를 심층적으로 분석해주세요.
+#             별도의 제목이나 글머리 기호 같은 특정 서식은 사용하지 말고, 자연스러운 문단으로 나누어 설명글 형식으로 작성해야 합니다.
+#             표의 종류, 구조 설명, 논문 내 역할 및 해석, 그리고 독자가 얻어야 할 핵심 인사이트를 모두 포함하여 설명해주세요.
+#             서론이나 부연 설명 없이, 요청한 분석 내용으로 바로 시작하세요. 대답은 모두 한국어로 해주세요.
+
+#             **섹션 본문**:
+#             {content}
+#             """
+
+#             llm = ChatGoogleGenerativeAI(model=GEMINI_PRO_MODEL, google_api_key=GOOGLE_API_KEY, temperature=0)
+#             agent = create_pandas_dataframe_agent(
+#                 llm,
+#                 df,
+#                 verbose=True,
+#                 agent_executor_kwargs={"handle_parsing_errors": True}
+#             )
+#             result = agent.invoke(analysis_question)
+            
+#             # verbose=True 로그와 실제 결과물을 분리하기 위해 output만 사용합니다.
+#             output = result.get("output", "분석 결과를 가져올 수 없습니다.").strip()
+#             all_results.append(f"### {i+1}번째 표 분석 결과\n\n" + output)
+
+#         return "\n\n---\n\n".join(all_results)
+
+#     except Exception as e:
+#         return f"표 분석 중 전체 프로세스에서 오류 발생: {e}"
 
 # import pandas as pd
 # from langchain_google_genai import ChatGoogleGenerativeAI

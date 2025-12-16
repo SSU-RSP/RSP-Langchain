@@ -1,56 +1,126 @@
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage
 from config import GOOGLE_API_KEY, GEMINI_PRO_VISION_MODEL
-from typing import List
+from typing import List, Dict
 
-def process_math(content: str, paper_title: str, section_title: str, table_of_contents: str, equations: List[str]) -> str:
+def process_math(content: str, paper_title: str, equations: List[str]) -> List[Dict[str, str]]:
     """
-    논문의 전체 맥락 속에서 여러 수식 이미지(URL)를 분석하고 서식 없는 순수 텍스트로 설명하는 에이전트
+    논문의 전체 요약(content)을 배경지식으로 하여, 
+    리스트로 전달된 각 수식 이미지(URL)를 개별적으로 분석하고 설명하는 에이전트
     """
-    print(f"🚀 수식 이미지 분석 에이전트 호출됨 (순수 텍스트 요약)...")
+    print(f"🚀 수식 이미지 분석 에이전트 호출됨 (총 {len(equations)}개 이미지 분석 시작)...")
     
+    results = []
+    
+    # Vision 모델 초기화
     try:
         llm = ChatGoogleGenerativeAI(model=GEMINI_PRO_VISION_MODEL, google_api_key=GOOGLE_API_KEY)
+    except Exception as e:
+        print(f"모델 초기화 실패: {e}")
+        return []
 
-        # [수정] 지시사항을 변경하고 '출력 형식' 섹션을 제거합니다.
-        text_prompt = f"""
-        **역할**: 당신은 복잡한 논문에 포함된 수식을 해당 분야의 전문가가 아닌 사람도 이해할 수 있도록 쉽게 풀어 설명하는 수석 연구원입니다.
+    # 각 이미지 URL에 대해 순차적으로 분석 수행
+    for image_url in equations:
+        try:
+            # 프롬프트: 전체 요약 내용을 문맥으로 제공하여 수식 해석 요청
+            text_prompt = f"""
+            **역할**: 당신은 논문에 등장하는 수식이나 도표가 연구의 핵심 논리와 어떻게 연결되는지 설명해주는 전문 연구원입니다.
 
-        **논문 전체 구조 (목차)**:
-        {table_of_contents}
+            **분석 배경**:
+            - 논문 제목: "{paper_title}"
+            - 논문 핵심 요약:
+            {content}
 
-        **분석 대상**:
-        - 논문 제목: "{paper_title}"
-        - 현재 섹션: "{section_title}"
-        - 분석할 수식: 지금부터 첨부되는 이미지에 포함된 모든 수식들
+            **지시**:
+            지금 제공된 **이미지(수식)**가 위 '논문 핵심 요약'의 맥락에서 어떤 의미를 갖는지 설명해주세요.
+            단순히 수식 기호를 읽는 것이 아니라, 이 수식이 연구의 방법론이나 결과 입증 과정에서 **어떤 역할을 하는지** 해석해야 합니다.
 
-        **지시**:
-        위 '논문 전체 구조'와 아래의 '섹션 본문'을 종합적으로 참고하여, 첨부된 각 이미지 속 수식에 대해 설명해주세요.
-        별도의 제목이나 글머리 기호 같은 특정 서식은 사용하지 말고, 자연스러운 문단으로 나누어 설명글 형식으로 작성해야 합니다.
-        각 수식의 역할, 변수 설명, 수식의 의미, 그리고 논문 내 중요성을 모두 포함하여 설명해주세요.
-        여러 개의 수식이 있다면 순서대로 분석하고, 서론이나 부연 설명 없이 요청한 분석 내용으로 바로 시작하세요. 대답은 모두 한국어로 해주세요.
+            **작성 가이드**:
+            - 서식 없는 자연스러운 줄글(문단)로 작성하세요.
+            - "이 수식은..." 과 같은 서두를 짧게 하고 바로 핵심 내용으로 들어가세요.
+            - 비전문가도 이해할 수 있도록 쉽게 풀어서 설명하세요.
+            - 언어는 **한국어**입니다.
+            """
 
-        **섹션 본문**:
-        {content}
-        """
-        
-        message_content = [{"type": "text", "text": text_prompt}]
-
-        for image_url in equations:
-            message_content.append({
-                "type": "image_url",
-                "image_url": image_url
+            message_content = [
+                {"type": "text", "text": text_prompt},
+                {"type": "image_url", "image_url": image_url}
+            ]
+            
+            message = HumanMessage(content=message_content)
+            
+            # API 호출
+            response = llm.invoke([message])
+            description = response.content.strip() if hasattr(response, 'content') else "분석 결과를 가져올 수 없습니다."
+            
+            # 결과 리스트에 추가 (URL과 설명 매핑)
+            results.append({
+                "image_url": image_url,
+                "description": description
             })
             
-        if len(message_content) > 1:
-            message = HumanMessage(content=message_content)
-            response = llm.invoke([message])
-            return response.content.strip() if hasattr(response, 'content') else "수식 이미지 분석 결과를 가져올 수 없습니다."
-        else:
-            return "분석할 수식 이미지가 없습니다."
+        except Exception as e:
+            print(f"이미지({image_url}) 분석 중 오류 발생: {e}")
+            results.append({
+                "image_url": image_url,
+                "description": "이미지 분석 중 오류가 발생했습니다."
+            })
 
-    except Exception as e:
-        return f"수식 이미지 분석 중 오류 발생: {e}"
+    return results
+
+# from langchain_google_genai import ChatGoogleGenerativeAI
+# from langchain_core.messages import HumanMessage
+# from config import GOOGLE_API_KEY, GEMINI_PRO_VISION_MODEL
+# from typing import List
+
+# def process_math(content: str, paper_title: str, section_title: str, table_of_contents: str, equations: List[str]) -> str:
+#     """
+#     논문의 전체 맥락 속에서 여러 수식 이미지(URL)를 분석하고 서식 없는 순수 텍스트로 설명하는 에이전트
+#     """
+#     print(f"🚀 수식 이미지 분석 에이전트 호출됨 (순수 텍스트 요약)...")
+    
+#     try:
+#         llm = ChatGoogleGenerativeAI(model=GEMINI_PRO_VISION_MODEL, google_api_key=GOOGLE_API_KEY)
+
+#         # [수정] 지시사항을 변경하고 '출력 형식' 섹션을 제거합니다.
+#         text_prompt = f"""
+#         **역할**: 당신은 복잡한 논문에 포함된 수식을 해당 분야의 전문가가 아닌 사람도 이해할 수 있도록 쉽게 풀어 설명하는 수석 연구원입니다.
+
+#         **논문 전체 구조 (목차)**:
+#         {table_of_contents}
+
+#         **분석 대상**:
+#         - 논문 제목: "{paper_title}"
+#         - 현재 섹션: "{section_title}"
+#         - 분석할 수식: 지금부터 첨부되는 이미지에 포함된 모든 수식들
+
+#         **지시**:
+#         위 '논문 전체 구조'와 아래의 '섹션 본문'을 종합적으로 참고하여, 첨부된 각 이미지 속 수식에 대해 설명해주세요.
+#         별도의 제목이나 글머리 기호 같은 특정 서식은 사용하지 말고, 자연스러운 문단으로 나누어 설명글 형식으로 작성해야 합니다.
+#         각 수식의 역할, 변수 설명, 수식의 의미, 그리고 논문 내 중요성을 모두 포함하여 설명해주세요.
+#         여러 개의 수식이 있다면 순서대로 분석하고, 서론이나 부연 설명 없이 요청한 분석 내용으로 바로 시작하세요. 대답은 모두 한국어로 해주세요.
+
+#         **섹션 본문**:
+#         {content}
+#         """
+        
+#         message_content = [{"type": "text", "text": text_prompt}]
+
+#         for image_url in equations:
+#             message_content.append({
+#                 "type": "image_url",
+#                 "image_url": image_url
+#             })
+            
+#         if len(message_content) > 1:
+#             message = HumanMessage(content=message_content)
+#             response = llm.invoke([message])
+#             return response.content.strip() if hasattr(response, 'content') else "수식 이미지 분석 결과를 가져올 수 없습니다."
+#         else:
+#             return "분석할 수식 이미지가 없습니다."
+
+#     except Exception as e:
+#         return f"수식 이미지 분석 중 오류 발생: {e}"
     
 # from langchain_google_genai import ChatGoogleGenerativeAI
 # from langchain_core.messages import HumanMessage
