@@ -7,10 +7,11 @@ from schemas import (
     TableAnalysisRequest, TableAnalysisResponse,
     MathAnalysisRequest, MathAnalysisResponse,
     AnalysisResultItem,
-    PodcastRequest, PodcastResponse
+    PodcastRequest, PodcastResponse,
+    StorytellingRequest, StorytellingResponse
 )
 # agents에서 각 처리 함수를 가져옵니다.
-from agents import process_text, process_vision, process_math, process_table, process_podcast
+from agents import process_text, process_vision, process_math, process_table, process_podcast, process_story
 
 # 1. 텍스트 분석 프로세서
 async def analyze_text_only(request: TextAnalysisRequest) -> TextAnalysisResponse:
@@ -84,6 +85,19 @@ async def generate_podcast_script(request: PodcastRequest) -> PodcastResponse:
     )
     
     return PodcastResponse(script=script_result)
+
+async def generate_storytelling(request: StorytellingRequest) -> StorytellingResponse:
+    print(f"📖 스토리텔링 요청: {request.paper_title}")
+    
+    # process_story가 Dict를 반환하므로 이를 받습니다.
+    story_data = await asyncio.to_thread(
+        process_story,
+        content=request.text,
+        paper_title=request.paper_title
+    )
+    
+    # Dict 데이터를 Pydantic 모델로 변환하여 반환
+    return StorytellingResponse(**story_data)
 
 # import asyncio
 # from schemas import AnalysisRequest, AnalysisResponse, SectionAnalysisResult

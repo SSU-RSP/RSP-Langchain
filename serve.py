@@ -9,17 +9,18 @@ from schemas import (
     VisionAnalysisRequest, VisionAnalysisResponse,
     TableAnalysisRequest, TableAnalysisResponse,
     MathAnalysisRequest, MathAnalysisResponse,
-    StorytellingRequest, PaperStorySummary,
-    PodcastRequest, PodcastResponse
+    PodcastRequest, PodcastResponse,
+    StorytellingRequest, StorytellingResponse
 )
 from processor import (
     analyze_text_only,
     analyze_vision_only,
     analyze_table_only,
     analyze_math_only,
-    generate_podcast_script
+    generate_podcast_script,
+    generate_storytelling
 )
-from agents import process_story
+# from agents import process_story
 
 app = FastAPI(
     title="논문 분석 멀티에이전트 API",
@@ -67,22 +68,27 @@ async def api_analyze_math(request: MathAnalysisRequest):
     """논문의 수식 이미지를 분석합니다."""
     return await analyze_math_only(request)
 
-# --- 5. 스토리텔링 API (기존 유지) ---
-@app.post("/storytelling", response_model=PaperStorySummary)
-async def create_story(request: StorytellingRequest):
-    """논문 전체 텍스트를 받아 6단계 스토리텔링으로 요약합니다."""
-    print(f"스토리텔링 요청 수신: paper_id={request.paper_id}")
-    story_json = await asyncio.to_thread(
-        process_story,
-        paper_id=request.paper_id,
-        full_paper_text=request.full_paper_text
-    )
-    return story_json
+# # --- 5. 스토리텔링 API (기존 유지) ---
+# @app.post("/storytelling", response_model=PaperStorySummary)
+# async def create_story(request: StorytellingRequest):
+#     """논문 전체 텍스트를 받아 6단계 스토리텔링으로 요약합니다."""
+#     print(f"스토리텔링 요청 수신: paper_id={request.paper_id}")
+#     story_json = await asyncio.to_thread(
+#         process_story,
+#         paper_id=request.paper_id,
+#         full_paper_text=request.full_paper_text
+#     )
+#     return story_json
 
 @app.post("/podcast", response_model=PodcastResponse)
 async def api_generate_podcast(request: PodcastRequest):
     """논문 텍스트를 입력받아 팟캐스트 대본을 생성합니다."""
     return await generate_podcast_script(request)
+
+@app.post("/storytelling", response_model=StorytellingResponse)
+async def api_create_story(request: StorytellingRequest):
+    """논문 텍스트를 받아 배경/문제/해결/실험/결과/영향 6단계로 분석합니다."""
+    return await generate_storytelling(request)
 
 # --- 서버 실행 ---
 if __name__ == "__main__":

@@ -42,19 +42,31 @@ class MathAnalysisResponse(BaseModel):
     results: List[AnalysisResultItem]
 
 # --- 스토리텔링용 (기존 유지) ---
+# class StorytellingRequest(BaseModel):
+#     paper_id: int
+#     full_paper_text: str
+
+# class StorySection(BaseModel):
+#     step: int
+#     heading: str
+#     content: str
+
+# class PaperStorySummary(BaseModel):
+#     paper_id: int
+#     title: str
+#     sections: List[StorySection]
 class StorytellingRequest(BaseModel):
-    paper_id: int
-    full_paper_text: str
+    paper_title: str
+    text: str       # 논문 전체 텍스트
 
-class StorySection(BaseModel):
-    step: int
-    heading: str
-    content: str
-
-class PaperStorySummary(BaseModel):
-    paper_id: int
-    title: str
-    sections: List[StorySection]
+class StorytellingResponse(BaseModel):
+    title: str      # AI가 생성한 창의적인 제목
+    background: str # 1. 배경
+    problem: str    # 2. 문제
+    method: str     # 3. 해결(방법)
+    experiment: str # 4. 실험
+    result: str     # 5. 결과
+    impact: str     # 6. 영향
 
     # --- 6. 팟캐스트(Podcast) 에이전트용 스키마 ---
 class PodcastRequest(BaseModel):
