@@ -3,7 +3,7 @@ from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
 from config import GOOGLE_API_KEY, GEMINI_PRO_MODEL
 
-def process_podcast(content: str, title: str = "논문 내용") -> str:
+def process_podcast(content: str, paper_title: str) -> str:
     """
     텍스트를 받아서 팟캐스트 대본 형식으로 변환하는 에이전트
     
@@ -14,14 +14,14 @@ def process_podcast(content: str, title: str = "논문 내용") -> str:
     Returns:
         팟캐스트 대본 형식의 문자열
     """
-    print(f"🎙️ 팟캐스트 대본 생성 에이전트 호출됨 (제목: '{title}')...")
+    print(f"🎙️ 팟캐스트 대본 생성 에이전트 호출됨 (제목: '{paper_title}')...")
     
     llm = ChatGoogleGenerativeAI(model=GEMINI_PRO_MODEL, google_api_key=GOOGLE_API_KEY)
     
     template = """
     **역할**: 당신은 전문 팟캐스트 작가입니다. 제공된 텍스트를 자연스럽고 흥미로운 팟캐스트 대본으로 변환해주세요.
 
-    **팟캐스트 제목**: "{title}"
+    **팟캐스트 제목**: "{paper_title}"
 
     **지시**:
     아래 텍스트를 바탕으로 팟캐스트 대본을 작성해주세요. 대본은 다음과 같은 형식을 따라야 합니다:
@@ -42,6 +42,8 @@ def process_podcast(content: str, title: str = "논문 내용") -> str:
     - 언어는 **한국어**로 작성
     - 불필요한 형식적 표현은 피하고 자연스러운 말하기 흐름 유지
     - TTS로 읽었을 때 자연스럽게 들리도록 작성
+    - 결과값 바로 스크립트로 쓰게 다른 설명 넣지 않음
+    - 줄바꿈 기호 같은 '\n', '\' 기호 넣지 않음
 
     **원본 텍스트**:
     {text_content}
@@ -52,7 +54,7 @@ def process_podcast(content: str, title: str = "논문 내용") -> str:
     chain = LLMChain(llm=llm, prompt=prompt)
     
     result = chain.invoke({
-        "title": title,
+        "paper_title": paper_title,
         "text_content": content
     })
     

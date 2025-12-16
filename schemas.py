@@ -56,6 +56,14 @@ class PaperStorySummary(BaseModel):
     title: str
     sections: List[StorySection]
 
+    # --- 6. 팟캐스트(Podcast) 에이전트용 스키마 ---
+class PodcastRequest(BaseModel):
+    paper_title: str
+    text: str       # 요약된 텍스트나 논문 전체 텍스트
+
+class PodcastResponse(BaseModel):
+    script: str     # 생성된 팟캐스트 대본
+
 # from pydantic import BaseModel, Field
 # from typing import List, Optional, Dict
 

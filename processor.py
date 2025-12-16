@@ -6,10 +6,11 @@ from schemas import (
     VisionAnalysisRequest, VisionAnalysisResponse,
     TableAnalysisRequest, TableAnalysisResponse,
     MathAnalysisRequest, MathAnalysisResponse,
-    AnalysisResultItem
+    AnalysisResultItem,
+    PodcastRequest, PodcastResponse
 )
 # agents에서 각 처리 함수를 가져옵니다.
-from agents import process_text, process_vision, process_math, process_table
+from agents import process_text, process_vision, process_math, process_table, process_podcast
 
 # 1. 텍스트 분석 프로세서
 async def analyze_text_only(request: TextAnalysisRequest) -> TextAnalysisResponse:
@@ -70,6 +71,19 @@ async def analyze_math_only(request: MathAnalysisRequest) -> MathAnalysisRespons
     
     formatted_results = [AnalysisResultItem(**item) for item in raw_results]
     return MathAnalysisResponse(results=formatted_results)
+
+# [신규 작성] 5. 팟캐스트 생성 프로세서
+async def generate_podcast_script(request: PodcastRequest) -> PodcastResponse:
+    print(f"🎙️ 팟캐스트 생성 요청: {request.paper_title}")
+    
+    # process_podcast 함수가 동기(Sync) 함수이므로 asyncio.to_thread로 감싸서 실행
+    script_result = await asyncio.to_thread(
+        process_podcast,
+        content=request.text,
+        paper_title=request.paper_title
+    )
+    
+    return PodcastResponse(script=script_result)
 
 # import asyncio
 # from schemas import AnalysisRequest, AnalysisResponse, SectionAnalysisResult

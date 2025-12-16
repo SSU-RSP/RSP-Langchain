@@ -9,13 +9,15 @@ from schemas import (
     VisionAnalysisRequest, VisionAnalysisResponse,
     TableAnalysisRequest, TableAnalysisResponse,
     MathAnalysisRequest, MathAnalysisResponse,
-    StorytellingRequest, PaperStorySummary
+    StorytellingRequest, PaperStorySummary,
+    PodcastRequest, PodcastResponse
 )
 from processor import (
     analyze_text_only,
     analyze_vision_only,
     analyze_table_only,
-    analyze_math_only
+    analyze_math_only,
+    generate_podcast_script
 )
 from agents import process_story
 
@@ -76,6 +78,11 @@ async def create_story(request: StorytellingRequest):
         full_paper_text=request.full_paper_text
     )
     return story_json
+
+@app.post("/podcast", response_model=PodcastResponse)
+async def api_generate_podcast(request: PodcastRequest):
+    """논문 텍스트를 입력받아 팟캐스트 대본을 생성합니다."""
+    return await generate_podcast_script(request)
 
 # --- 서버 실행 ---
 if __name__ == "__main__":
