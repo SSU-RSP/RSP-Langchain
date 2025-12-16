@@ -3,15 +3,16 @@ from langchain_core.messages import HumanMessage
 from config import GOOGLE_API_KEY, GEMINI_PRO_VISION_MODEL
 from typing import List, Dict
 
+
 def process_vision(content: str, paper_title: str, images: List[str]) -> List[Dict[str, str]]:
     """
-    논문의 전체 요약(content)을 배경지식으로 하여, 
-    일반 이미지(그림, 그래프, 다이어그램 등)를 시각적으로 분석하고 설명하는 에이전트
+    논문의 전체 요약(content)을 배경지식으로 하여,
+    표(Table)와 일반 이미지(그림, 그래프, 다이어그램 등)를 한 번에 시각적으로 분석하고 설명하는 에이전트
     """
-    print(f"🚀 비전(그림/그래프) 에이전트 호출됨 (총 {len(images)}개 이미지 분석 시작)...")
-    
+    print(f"🚀 비전(그림/표) 에이전트 호출됨 (총 {len(images)}개 이미지 분석 시작)...")
+
     results = []
-    
+
     # Vision 모델 초기화
     try:
         llm = ChatGoogleGenerativeAI(model=GEMINI_PRO_VISION_MODEL, google_api_key=GOOGLE_API_KEY)
@@ -22,53 +23,63 @@ def process_vision(content: str, paper_title: str, images: List[str]) -> List[Di
     # 각 이미지 URL에 대해 순차적으로 분석 수행
     for image_url in images:
         try:
-            # 프롬프트: 논문 전체 맥락에서 시각 자료 해석 요청
+            # 프롬프트: 논문 전체 맥락에서 "표 vs 그림"을 먼저 구분한 뒤, 타입에 맞게 해석하도록 지시
             text_prompt = f"""
-            **역할**: 당신은 논문에 포함된 복잡한 수식, 그림(Figure), 그래프, 다이어그램, 아키텍처 구조도 등을 해석하여 연구의 핵심 내용을 시각적으로 풀어 설명해주는 전문 연구 분석가입니다.
+            **역할**: 당신은 논문에 포함된 표(Table), 그림(Figure), 그래프, 다이어그램, 아키텍처 구조도 등을 해석하여
+            연구의 핵심 내용을 시각적으로 풀어 설명해주는 전문 연구 분석가입니다.
 
             **분석 배경**:
             - 논문 제목: "{paper_title}"
             - 논문 핵심 요약:
             {content}
 
-            **지시**:
-            제공된 **이미지**를 보고, 위 '논문 핵심 요약'의 맥락에서 이 그림이 무엇을 설명하고 있는지 해석해주세요.
-            단순히 "그림에 선이 있다"는 식의 묘사가 아니라, **연구 내용과 연결된 의미**를 설명해야 합니다.
+            **1단계 – 타입 판별 (표인지, 그림/그래프/다이어그램인지):**
+            먼저 제공된 이미지를 보고 이것이 **표(테이블)** 인지, 아니면 **일반 그림/그래프/다이어그램** 인지 스스로 판단하세요.
 
-            다음 관점을 포함하세요:
-            1. **시각적 식별**: 이것은 어떤 종류의 그림인가? (예: 성능 비교 그래프, 모델 아키텍처 다이어그램, 실험 과정 흐름도 등)
-            2. **핵심 정보**: 그림에서 가장 중요한 정보나 관계는 무엇인가? (X축/Y축의 의미, 화살표의 흐름, 강조된 부분 등)
-            3. **연구 내 역할**: 이 그림이 저자의 주장을 어떻게 뒷받침하거나 설명하고 있는가?
+            **2단계 – 타입에 따른 해석 방식:**
+            - 만약 표(Table)라면:
+              - 행(row)과 열(column)이 각각 무엇을 의미하는지 설명하세요.
+              - 가장 중요한 수치나 패턴(최고/최저 값, 뚜렷한 증가·감소 등)을 짚어주세요.
+              - 이 표가 논문에서 어떤 주장을 뒷받침하는지, 결과적으로 어떤 메시지를 주는지 설명하세요.
+            - 만약 그림/그래프/다이어그램이라면:
+              - 이것이 어떤 종류의 시각 자료인지 먼저 짧게 말하고 (예: 성능 비교 그래프, 모델 구조도 등),
+              - 축, 축 레이블, 색/선/박스 등의 시각적 요소가 무엇을 의미하는지 설명하세요.
+              - 이 그림이 논문의 어떤 아이디어나 결과를 강조하는지, 연구 흐름 속 역할을 설명하세요.
 
             **작성 가이드**:
-            - 서식 없는 자연스러운 줄글(문단)로 작성하세요.
-            - "이 그림은..." 같은 서두를 최소화하고 바로 핵심 분석 내용으로 시작하세요.
+            - 표/그림 구분 결과를 자연스럽게 문장 안에 녹여서 설명하되, 별도의 마크다운 목록은 쓰지 마세요.
+            - 수치를 나열하기보다는, 독자가 이해해야 할 **핵심 의미와 인사이트** 위주로 설명하세요.
+            - 서식 없는 자연스러운 문단 형태로 작성하고, 불필요한 서론 없이 바로 분석 내용으로 시작하세요.
             - 언어는 **한국어**입니다.
             """
 
             message_content = [
                 {"type": "text", "text": text_prompt},
-                {"type": "image_url", "image_url": image_url}
+                {"type": "image_url", "image_url": image_url},
             ]
-            
+
             message = HumanMessage(content=message_content)
-            
+
             # API 호출
             response = llm.invoke([message])
-            description = response.content.strip() if hasattr(response, 'content') else "이미지 분석 결과를 가져올 수 없습니다."
-            
+            description = response.content.strip() if hasattr(response, "content") else "이미지 분석 결과를 가져올 수 없습니다."
+
             # 결과 리스트에 추가 (URL과 설명 매핑)
-            results.append({
-                "image_url": image_url,
-                "description": description
-            })
-            
+            results.append(
+                {
+                    "image_url": image_url,
+                    "description": description,
+                }
+            )
+
         except Exception as e:
             print(f"이미지({image_url}) 분석 중 오류 발생: {e}")
-            results.append({
-                "image_url": image_url,
-                "description": "이미지 분석 중 오류가 발생했습니다."
-            })
+            results.append(
+                {
+                    "image_url": image_url,
+                    "description": "이미지 분석 중 오류가 발생했습니다.",
+                }
+            )
 
     return results
 
